@@ -120,6 +120,7 @@ def display_report(cfop_counter, classificacao_counter):
     col1, col2 = st.columns(2)
 
     with col1:
+        st.subheader("Distribuição de CFOP")
         cfop_df = pd.DataFrame.from_dict(
             cfop_counter, orient='index', columns=['count']).reset_index()
         cfop_df.columns = ['CFOP', 'Contagem']
@@ -137,6 +138,7 @@ def display_report(cfop_counter, classificacao_counter):
         st.dataframe(cfop_df)
 
     with col2:
+        st.subheader("Distribuição de Classificações")
         class_df = pd.DataFrame.from_dict(
             classificacao_counter, orient='index', columns=['count']).reset_index()
         class_df.columns = ['Classificação', 'Contagem']
@@ -160,6 +162,8 @@ def process_files(uploaded_files):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
+    st.header("Análise Individual das Notas Fiscais")
+
     for i, file in enumerate(uploaded_files):
         status_text.text(f"Processando: {file.name}")
         xml_content = file.read().decode('utf-8')
@@ -175,7 +179,7 @@ def process_files(uploaded_files):
 
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
-        time.sleep(0.1)
+        time.sleep(0.1)  # Simula um breve atraso para mostrar o progresso
 
     status_text.text("Processamento concluído!")
     time.sleep(1)
@@ -188,23 +192,15 @@ def process_files(uploaded_files):
 def main():
     st.title("FiscAI - Assistente de Validação de Notas Fiscais")
 
-    st.sidebar.header("Configurações")
-    show_individual_analysis = st.sidebar.checkbox(
-        "Mostrar análise individual", value=True)
-
     uploaded_files = st.file_uploader(
         "Carregue os arquivos XML das notas fiscais", accept_multiple_files=True, type=['xml'])
 
     if uploaded_files:
         if st.button("Iniciar Análise Automatizada"):
             with st.spinner("Iniciando análise..."):
-                time.sleep(1)
+                time.sleep(1)  # Simula um breve atraso inicial
 
             cfop_counter, classificacao_counter = process_files(uploaded_files)
-
-            if show_individual_analysis:
-                st.header("Análise Individual das Notas Fiscais")
-                st.write("Expanda cada nota fiscal para ver os detalhes.")
 
             st.markdown("---")
             display_report(cfop_counter, classificacao_counter)
