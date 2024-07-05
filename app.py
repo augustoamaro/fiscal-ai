@@ -96,22 +96,16 @@ def analyze_nf(json_data):
     **CNPJ DA NOTA:** {cnpj}\n
     **NÚMERO DA NOTA FISCAL:** {nNF}\n
     **SÉRIE DA NOTA FISCAL:** {serie}\n
-    **CFOP DA NOTA FISCAL:** {cfop}\n
+    **CFOP DA NOTA FISCAL:** {cfop}\n\n
     
     **Número entre as tags <indPres> e </indPres>:** {ind_pres}\n
     
     **CLASSIFICAÇÃO DA OPERAÇÃO:** {classificacao}
     """
 
-    if ind_pres == "1":
-        output += "\n**ESTA NOTA ESTÁ CORRETA**"
+    is_correct = ind_pres == "1"
 
-    return output, cfop, classificacao
-
-
-def get_download_link(json_string, filename):
-    b64 = base64.b64encode(json_string.encode()).decode()
-    return f'<a href="data:application/json;base64,{b64}" download="{filename}">Baixar JSON</a>'
+    return output, cfop, classificacao, is_correct
 
 
 def display_report(cfop_counter, classificacao_counter):
@@ -121,20 +115,27 @@ def display_report(cfop_counter, classificacao_counter):
 
     with col1:
         st.subheader("Distribuição de CFOP")
+
+        # Filtrar CFOPs que começam com 1 ou 2
+        filtered_cfop = {k: v for k, v in cfop_counter.items()
+                         if k.startswith(('1', '2'))}
         cfop_df = pd.DataFrame.from_dict(
-            cfop_counter, orient='index', columns=['count']).reset_index()
+            filtered_cfop, orient='index', columns=['count']).reset_index()
         cfop_df.columns = ['CFOP', 'Contagem']
 
-        cfop_chart = alt.Chart(cfop_df).mark_bar().encode(
-            x='CFOP',
-            y='Contagem',
-            color='CFOP'
-        ).properties(
-            title='Distribuição de CFOP'
-        )
-        st.altair_chart(cfop_chart, use_container_width=True)
+        if not cfop_df.empty:
+            cfop_chart = alt.Chart(cfop_df).mark_bar().encode(
+                x='CFOP',
+                y='Contagem',
+                color='CFOP'
+            ).properties(
+                title='Distribuição de CFOP (1xxx e 2xxx)'
+            )
+            st.altair_chart(cfop_chart, use_container_width=True)
+        else:
+            st.write("Não há dados de CFOP começando com 1 ou 2 para exibir.")
 
-        st.write("Dados de CFOP:")
+        st.write("Dados de CFOP (1xxx e 2xxx):")
         st.dataframe(cfop_df)
 
     with col2:
@@ -169,17 +170,26 @@ def process_files(uploaded_files):
         xml_content = file.read().decode('utf-8')
         json_content = xml_to_json(xml_content)
         json_data = json.loads(json_content)
-        analysis, cfop, classificacao = analyze_nf(json_data)
+        analysis, cfop, classificacao, is_correct = analyze_nf(json_data)
 
-        with st.expander(f"Nota Fiscal: {file.name}", expanded=False):
+        if is_correct:
+            st.success(f"Nota Fiscal: {file.name} (CORRETA)")
+        else:
+            st.error(f"Nota Fiscal: {file.name} (INCORRETA)")
+
+        with st.expander("Ver detalhes", expanded=False):
             st.markdown(analysis)
+            if is_correct:
+                st.success("ESTA NOTA ESTÁ CORRETA")
+            else:
+                st.error("ESTA NOTA NÃO ESTÁ CORRETA")
 
         cfop_counter[cfop] += 1
         classificacao_counter[classificacao] += 1
 
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
-        time.sleep(0.1)  # Simula um breve atraso para mostrar o progresso
+        time.sleep(0.1)
 
     status_text.text("Processamento concluído!")
     time.sleep(1)
@@ -198,7 +208,7 @@ def main():
     if uploaded_files:
         if st.button("Iniciar Análise Automatizada"):
             with st.spinner("Iniciando análise..."):
-                time.sleep(1)  # Simula um breve atraso inicial
+                time.sleep(1)
 
             cfop_counter, classificacao_counter = process_files(uploaded_files)
 
