@@ -3,6 +3,9 @@ import xml.etree.ElementTree as ET
 import json
 from collections import Counter
 import base64
+import pandas as pd
+import altair as alt
+import time
 
 
 def remove_namespace(tag):
@@ -111,40 +114,105 @@ def get_download_link(json_string, filename):
     return f'<a href="data:application/json;base64,{b64}" download="{filename}">Baixar JSON</a>'
 
 
+def display_report(cfop_counter, classificacao_counter):
+    st.header("Relatório Final")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        cfop_df = pd.DataFrame.from_dict(
+            cfop_counter, orient='index', columns=['count']).reset_index()
+        cfop_df.columns = ['CFOP', 'Contagem']
+
+        cfop_chart = alt.Chart(cfop_df).mark_bar().encode(
+            x='CFOP',
+            y='Contagem',
+            color='CFOP'
+        ).properties(
+            title='Distribuição de CFOP'
+        )
+        st.altair_chart(cfop_chart, use_container_width=True)
+
+        st.write("Dados de CFOP:")
+        st.dataframe(cfop_df)
+
+    with col2:
+        class_df = pd.DataFrame.from_dict(
+            classificacao_counter, orient='index', columns=['count']).reset_index()
+        class_df.columns = ['Classificação', 'Contagem']
+
+        class_chart = alt.Chart(class_df).mark_arc().encode(
+            theta='Contagem',
+            color='Classificação',
+            tooltip=['Classificação', 'Contagem']
+        ).properties(
+            title='Distribuição de Classificações de Operação'
+        )
+        st.altair_chart(class_chart, use_container_width=True)
+
+        st.write("Dados de Classificações:")
+        st.dataframe(class_df)
+
+
+def process_files(uploaded_files):
+    cfop_counter = Counter()
+    classificacao_counter = Counter()
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    for i, file in enumerate(uploaded_files):
+        status_text.text(f"Processando: {file.name}")
+        xml_content = file.read().decode('utf-8')
+        json_content = xml_to_json(xml_content)
+        json_data = json.loads(json_content)
+        analysis, cfop, classificacao = analyze_nf(json_data)
+
+        with st.expander(f"Nota Fiscal: {file.name}", expanded=False):
+            st.markdown(analysis)
+
+        cfop_counter[cfop] += 1
+        classificacao_counter[classificacao] += 1
+
+        progress = (i + 1) / len(uploaded_files)
+        progress_bar.progress(progress)
+        time.sleep(0.1)
+
+    status_text.text("Processamento concluído!")
+    time.sleep(1)
+    status_text.empty()
+    progress_bar.empty()
+
+    return cfop_counter, classificacao_counter
+
+
 def main():
     st.title("FiscAI - Assistente de Validação de Notas Fiscais")
+
+    st.sidebar.header("Configurações")
+    show_individual_analysis = st.sidebar.checkbox(
+        "Mostrar análise individual", value=True)
 
     uploaded_files = st.file_uploader(
         "Carregue os arquivos XML das notas fiscais", accept_multiple_files=True, type=['xml'])
 
-    if uploaded_files and st.button("Analisar"):
-        cfop_counter = Counter()
-        classificacao_counter = Counter()
+    if uploaded_files:
+        if st.button("Iniciar Análise Automatizada"):
+            with st.spinner("Iniciando análise..."):
+                time.sleep(1)
 
-        for file in uploaded_files:
-            st.subheader(f"Análise da Nota Fiscal: {file.name}")
-            xml_content = file.read().decode('utf-8')
-            json_content = xml_to_json(xml_content)
-            json_data = json.loads(json_content)
-            analysis, cfop, classificacao = analyze_nf(json_data)
-            st.markdown(analysis)
+            cfop_counter, classificacao_counter = process_files(uploaded_files)
 
-            st.markdown(get_download_link(
-                json_content, f"{file.name}.json"), unsafe_allow_html=True)
+            if show_individual_analysis:
+                st.header("Análise Individual das Notas Fiscais")
+                st.write("Expanda cada nota fiscal para ver os detalhes.")
+
             st.markdown("---")
+            display_report(cfop_counter, classificacao_counter)
 
-            cfop_counter[cfop] += 1
-            classificacao_counter[classificacao] += 1
-
-        st.subheader("Relatório Final")
-
-        st.write("Contagem de CFOP:")
-        for cfop, count in cfop_counter.items():
-            st.write(f"- CFOP {cfop}: {count}")
-
-        st.write("\nContagem de Classificações:")
-        for classificacao, count in classificacao_counter.items():
-            st.write(f"- {classificacao}: {count}")
+            st.success("Análise concluída com sucesso!")
+    else:
+        st.info(
+            "Por favor, carregue os arquivos XML para iniciar a análise automatizada.")
 
 
 if __name__ == "__main__":
