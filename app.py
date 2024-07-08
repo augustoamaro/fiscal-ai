@@ -168,6 +168,8 @@ def process_files(uploaded_files):
 
     st.header("Análise Individual das Notas Fiscais")
 
+    all_analyses = []
+
     for i, file in enumerate(uploaded_files):
         status_text.text(f"Processando: {file.name}")
         xml_content = file.read().decode('utf-8')
@@ -175,17 +177,11 @@ def process_files(uploaded_files):
         json_data = json.loads(json_content)
         analysis, cfop, classificacao, is_correct = analyze_nf(json_data)
 
-        if is_correct:
-            st.success(f"Nota Fiscal: {file.name} (CORRETA)")
-        else:
-            st.error(f"Nota Fiscal: {file.name} (INCORRETA)")
-
-        with st.expander("Ver detalhes", expanded=False):
-            st.markdown(analysis)
-            if is_correct:
-                st.success("ESTA NOTA ESTÁ CORRETA")
-            else:
-                st.error("ESTA NOTA NÃO ESTÁ CORRETA")
+        all_analyses.append({
+            'file_name': file.name,
+            'analysis': analysis,
+            'is_correct': is_correct
+        })
 
         cfop_counter[cfop] += 1
         classificacao_counter[classificacao] += 1
@@ -199,27 +195,85 @@ def process_files(uploaded_files):
     status_text.empty()
     progress_bar.empty()
 
-    return cfop_counter, classificacao_counter
+    return cfop_counter, classificacao_counter, all_analyses
+
+
+def display_paginated_analyses(all_analyses, items_per_page=10):
+    total_pages = len(all_analyses) // items_per_page + \
+        (1 if len(all_analyses) % items_per_page > 0 else 0)
+
+    if 'page' not in st.session_state:
+        st.session_state.page = 1
+
+    def on_page_change():
+        st.session_state.page = st.session_state.page_selectbox
+        st.rerun()
+
+    # Usar um select box para a navegação de páginas
+    page = st.selectbox("Página", options=range(1, total_pages + 1),
+                        index=st.session_state.page - 1,
+                        key="page_selectbox",
+                        on_change=on_page_change)
+
+    start_idx = (st.session_state.page - 1) * items_per_page
+    end_idx = min(start_idx + items_per_page, len(all_analyses))
+
+    for item in all_analyses[start_idx:end_idx]:
+        if item['is_correct']:
+            st.success(f"Nota Fiscal: {item['file_name']} (CORRETA)")
+        else:
+            st.error(f"Nota Fiscal: {item['file_name']} (INCORRETA)")
+
+        with st.expander("Ver detalhes", expanded=False):
+            st.markdown(item['analysis'])
+            if item['is_correct']:
+                st.success("ESTA NOTA ESTÁ CORRETA")
+            else:
+                st.error("ESTA NOTA NÃO ESTÁ CORRETA")
+
+    st.write(
+        f"Exibindo notas {start_idx + 1} a {end_idx} de {len(all_analyses)}")
 
 
 def main():
     st.title("FiscAI - Assistente de Validação de Notas Fiscais")
 
+    if 'analyzed' not in st.session_state:
+        st.session_state.analyzed = False
+    if 'all_analyses' not in st.session_state:
+        st.session_state.all_analyses = []
+    if 'cfop_counter' not in st.session_state:
+        st.session_state.cfop_counter = Counter()
+    if 'classificacao_counter' not in st.session_state:
+        st.session_state.classificacao_counter = Counter()
+
     uploaded_files = st.file_uploader(
         "Carregue os arquivos XML das notas fiscais", accept_multiple_files=True, type=['xml'])
 
-    if uploaded_files:
+    if uploaded_files and not st.session_state.analyzed:
         if st.button("Iniciar Análise Automatizada"):
             with st.spinner("Iniciando análise..."):
                 time.sleep(1)
 
-            cfop_counter, classificacao_counter = process_files(uploaded_files)
+            st.session_state.cfop_counter, st.session_state.classificacao_counter, st.session_state.all_analyses = process_files(
+                uploaded_files)
+            st.session_state.analyzed = True
 
-            st.markdown("---")
-            display_report(cfop_counter, classificacao_counter)
+    if st.session_state.analyzed:
+        st.markdown("---")
+        display_paginated_analyses(st.session_state.all_analyses)
 
-            st.success("Análise concluída com sucesso!")
-    else:
+        st.markdown("---")
+        display_report(st.session_state.cfop_counter,
+                       st.session_state.classificacao_counter)
+
+        if st.button("Reiniciar Análise"):
+            st.session_state.analyzed = False
+            st.session_state.all_analyses = []
+            st.session_state.cfop_counter = Counter()
+            st.session_state.classificacao_counter = Counter()
+            st.rerun()
+    elif not uploaded_files:
         st.info(
             "Por favor, carregue os arquivos XML para iniciar a análise automatizada.")
 
