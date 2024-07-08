@@ -2,7 +2,6 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import json
 from collections import Counter
-import base64
 import pandas as pd
 import altair as alt
 import time
@@ -116,27 +115,31 @@ def display_report(cfop_counter, classificacao_counter):
     with col1:
         st.subheader("Distribuição de CFOP")
 
-        # Filtrar CFOPs que começam com 1 ou 2
+        # Filtrar CFOPs que começam com 5 ou 6
         filtered_cfop = {k: v for k, v in cfop_counter.items()
-                         if k.startswith(('1', '2'))}
+                         if k.startswith(('5', '6'))}
         cfop_df = pd.DataFrame.from_dict(
             filtered_cfop, orient='index', columns=['count']).reset_index()
         cfop_df.columns = ['CFOP', 'Contagem']
 
         if not cfop_df.empty:
-            cfop_chart = alt.Chart(cfop_df).mark_bar().encode(
-                x='CFOP',
-                y='Contagem',
+            cfop_df['CFOP'] = cfop_df['CFOP'].str[:4]
+            grouped_cfop = cfop_df.groupby('CFOP')[
+                'Contagem'].sum().reset_index()
+
+            cfop_chart = alt.Chart(grouped_cfop).mark_bar().encode(
+                x=alt.X('CFOP', title='CFOP'),
+                y=alt.Y('Contagem', title='Número de Notas'),
                 color='CFOP'
             ).properties(
-                title='Distribuição de CFOP (1xxx e 2xxx)'
+                title='Distribuição de CFOP (5xxx e 6xxx)'
             )
             st.altair_chart(cfop_chart, use_container_width=True)
         else:
-            st.write("Não há dados de CFOP começando com 1 ou 2 para exibir.")
+            st.write("Não há dados de CFOP começando com 5 ou 6 para exibir.")
 
-        st.write("Dados de CFOP (1xxx e 2xxx):")
-        st.dataframe(cfop_df)
+        st.write("Dados de CFOP (5xxx e 6xxx):")
+        st.dataframe(grouped_cfop)
 
     with col2:
         st.subheader("Distribuição de Classificações")
