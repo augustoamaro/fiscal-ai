@@ -97,7 +97,7 @@ def analyze_nf(json_data):
     **SÉRIE DA NOTA FISCAL:** {serie}\n
     **CFOP DA NOTA FISCAL:** {cfop}\n\n
     
-    **Número entre as tags <indPres> e </indPres>:** {ind_pres}\n
+    **Número entre as tags <indPres> {ind_pres} </indPres>:**\n
     
     **CLASSIFICAÇÃO DA OPERAÇÃO:** {classificacao}
     """
@@ -107,7 +107,7 @@ def analyze_nf(json_data):
     return output, cfop, classificacao, is_correct
 
 
-def display_report(cfop_counter, classificacao_counter):
+def display_report(cfop_counter, classificacao_counter, ind_pres_data):
     st.header("Relatório Final")
 
     col1, col2 = st.columns(2)
@@ -115,7 +115,6 @@ def display_report(cfop_counter, classificacao_counter):
     with col1:
         st.subheader("Distribuição de CFOP")
 
-        # Filtrar CFOPs que começam com 5 ou 6
         filtered_cfop = {k: v for k, v in cfop_counter.items()
                          if k.startswith(('5', '6'))}
         cfop_df = pd.DataFrame.from_dict(
@@ -139,7 +138,22 @@ def display_report(cfop_counter, classificacao_counter):
             st.write("Não há dados de CFOP começando com 5 ou 6 para exibir.")
 
         st.write("Dados de CFOP (5xxx e 6xxx):")
-        st.dataframe(grouped_cfop)
+
+        def highlight_cfop(row):
+            cfop = row['CFOP']
+            highlight_cfops = ['6101', '6102', '6108', '6116']
+            if cfop in highlight_cfops:
+                ind_pres_values = ind_pres_data.get(cfop, [])
+                if all(value == "1" for value in ind_pres_values):
+                    # Verde para operações presenciais
+                    return ['background-color: #059212' for _ in row]
+                elif any(value != "1" for value in ind_pres_values):
+                    # Vermelho para operações não presenciais
+                    return ['background-color: #E4003A' for _ in row]
+            return [''] * len(row)
+
+        styled_df = grouped_cfop.style.apply(highlight_cfop, axis=1)
+        st.dataframe(styled_df)
 
     with col2:
         st.subheader("Distribuição de Classificações")
@@ -163,6 +177,7 @@ def display_report(cfop_counter, classificacao_counter):
 def process_files(uploaded_files):
     cfop_counter = Counter()
     classificacao_counter = Counter()
+    ind_pres_data = {}
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -186,6 +201,11 @@ def process_files(uploaded_files):
         cfop_counter[cfop] += 1
         classificacao_counter[classificacao] += 1
 
+        ind_pres = extract_value(json_data, "indPres")
+        if cfop not in ind_pres_data:
+            ind_pres_data[cfop] = []
+        ind_pres_data[cfop].append(ind_pres)
+
         progress = (i + 1) / len(uploaded_files)
         progress_bar.progress(progress)
         time.sleep(0.1)
@@ -195,7 +215,7 @@ def process_files(uploaded_files):
     status_text.empty()
     progress_bar.empty()
 
-    return cfop_counter, classificacao_counter, all_analyses
+    return cfop_counter, classificacao_counter, all_analyses, ind_pres_data
 
 
 def display_paginated_analyses(all_analyses, items_per_page=10):
@@ -209,7 +229,6 @@ def display_paginated_analyses(all_analyses, items_per_page=10):
         st.session_state.page = st.session_state.page_selectbox
         st.rerun()
 
-    # Usar um select box para a navegação de páginas
     page = st.selectbox("Página", options=range(1, total_pages + 1),
                         index=st.session_state.page - 1,
                         key="page_selectbox",
@@ -246,6 +265,8 @@ def main():
         st.session_state.cfop_counter = Counter()
     if 'classificacao_counter' not in st.session_state:
         st.session_state.classificacao_counter = Counter()
+    if 'ind_pres_data' not in st.session_state:
+        st.session_state.ind_pres_data = {}
 
     uploaded_files = st.file_uploader(
         "Carregue os arquivos XML das notas fiscais", accept_multiple_files=True, type=['xml'])
@@ -255,7 +276,7 @@ def main():
             with st.spinner("Iniciando análise..."):
                 time.sleep(1)
 
-            st.session_state.cfop_counter, st.session_state.classificacao_counter, st.session_state.all_analyses = process_files(
+            st.session_state.cfop_counter, st.session_state.classificacao_counter, st.session_state.all_analyses, st.session_state.ind_pres_data = process_files(
                 uploaded_files)
             st.session_state.analyzed = True
 
@@ -265,13 +286,15 @@ def main():
 
         st.markdown("---")
         display_report(st.session_state.cfop_counter,
-                       st.session_state.classificacao_counter)
+                       st.session_state.classificacao_counter,
+                       st.session_state.ind_pres_data)
 
         if st.button("Reiniciar Análise"):
             st.session_state.analyzed = False
             st.session_state.all_analyses = []
             st.session_state.cfop_counter = Counter()
             st.session_state.classificacao_counter = Counter()
+            st.session_state.ind_pres_data = {}
             st.rerun()
     elif not uploaded_files:
         st.info(
