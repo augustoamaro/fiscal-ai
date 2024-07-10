@@ -97,14 +97,28 @@ def analyze_nf(json_data):
     **SÉRIE DA NOTA FISCAL:** {serie}\n
     **CFOP DA NOTA FISCAL:** {cfop}\n\n
     
-    **Número entre as tags <indPres> {ind_pres} </indPres>:**\n
+    **Número entre as tags <indPres> {ind_pres} </indPres>**\n
     
     **CLASSIFICAÇÃO DA OPERAÇÃO:** {classificacao}
     """
 
-    is_correct = ind_pres == "1"
+    # Implementação das novas regras
+    cfop_list = ['6101', '6102', '6108', '6116']
 
-    return output, cfop, classificacao, is_correct
+    if cfop not in cfop_list:
+        is_correct = True
+        status = "CORRETA"
+        color = "green"
+    elif cfop in cfop_list and ind_pres != "1":
+        is_correct = False
+        status = "DEVE SER REVISADA"
+        color = "red"
+    else:
+        is_correct = True
+        status = "CORRETA"
+        color = "green"
+
+    return output, cfop, classificacao, is_correct, status, color
 
 
 def display_report(cfop_counter, classificacao_counter, ind_pres_data):
@@ -115,10 +129,8 @@ def display_report(cfop_counter, classificacao_counter, ind_pres_data):
     with col1:
         st.subheader("Distribuição de CFOP")
 
-        filtered_cfop = {k: v for k, v in cfop_counter.items()
-                         if k.startswith(('5', '6'))}
         cfop_df = pd.DataFrame.from_dict(
-            filtered_cfop, orient='index', columns=['count']).reset_index()
+            cfop_counter, orient='index', columns=['count']).reset_index()
         cfop_df.columns = ['CFOP', 'Contagem']
 
         if not cfop_df.empty:
@@ -131,13 +143,13 @@ def display_report(cfop_counter, classificacao_counter, ind_pres_data):
                 y=alt.Y('Contagem', title='Número de Notas'),
                 color='CFOP'
             ).properties(
-                title='Distribuição de CFOP (5xxx e 6xxx)'
+                title='Distribuição de CFOP'
             )
             st.altair_chart(cfop_chart, use_container_width=True)
         else:
-            st.write("Não há dados de CFOP começando com 5 ou 6 para exibir.")
+            st.write("Não há dados de CFOP para exibir.")
 
-        st.write("Dados de CFOP (5xxx e 6xxx):")
+        st.write("Dados de CFOP:")
 
         def highlight_cfop(row):
             cfop = row['CFOP']
@@ -150,7 +162,8 @@ def display_report(cfop_counter, classificacao_counter, ind_pres_data):
                 elif any(value != "1" for value in ind_pres_values):
                     # Vermelho para operações não presenciais
                     return ['background-color: #E4003A' for _ in row]
-            return [''] * len(row)
+            # Verde para outros CFOPs
+            return ['background-color: #059212' for _ in row]
 
         styled_df = grouped_cfop.style.apply(highlight_cfop, axis=1)
         st.dataframe(styled_df)
@@ -190,12 +203,15 @@ def process_files(uploaded_files):
         xml_content = file.read().decode('utf-8')
         json_content = xml_to_json(xml_content)
         json_data = json.loads(json_content)
-        analysis, cfop, classificacao, is_correct = analyze_nf(json_data)
+        analysis, cfop, classificacao, is_correct, status, color = analyze_nf(
+            json_data)
 
         all_analyses.append({
             'file_name': file.name,
             'analysis': analysis,
-            'is_correct': is_correct
+            'is_correct': is_correct,
+            'status': status,
+            'color': color
         })
 
         cfop_counter[cfop] += 1
@@ -238,17 +254,17 @@ def display_paginated_analyses(all_analyses, items_per_page=10):
     end_idx = min(start_idx + items_per_page, len(all_analyses))
 
     for item in all_analyses[start_idx:end_idx]:
-        if item['is_correct']:
-            st.success(f"Nota Fiscal: {item['file_name']} (CORRETA)")
+        if item['color'] == 'green':
+            st.success(f"Nota Fiscal: {item['file_name']} ({item['status']})")
         else:
-            st.error(f"Nota Fiscal: {item['file_name']} (INCORRETA)")
+            st.error(f"Nota Fiscal: {item['file_name']} ({item['status']})")
 
         with st.expander("Ver detalhes", expanded=False):
             st.markdown(item['analysis'])
-            if item['is_correct']:
-                st.success("ESTA NOTA ESTÁ CORRETA")
+            if item['color'] == 'green':
+                st.success(f"ESTA NOTA ESTÁ {item['status']}")
             else:
-                st.error("ESTA NOTA NÃO ESTÁ CORRETA")
+                st.error(f"ESTA NOTA {item['status']}")
 
     st.write(
         f"Exibindo notas {start_idx + 1} a {end_idx} de {len(all_analyses)}")
