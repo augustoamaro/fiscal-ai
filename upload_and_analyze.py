@@ -1,10 +1,8 @@
 import streamlit as st
-import xml.etree.ElementTree as ET
-import json
-from collections import Counter
-import pandas as pd
-import altair as alt
 import time
+from collections import Counter
+import json
+import xml.etree.ElementTree as ET
 
 
 def remove_namespace(tag):
@@ -121,72 +119,6 @@ def analyze_nf(json_data):
     return output, cfop, classificacao, is_correct, status, color
 
 
-def display_report(cfop_counter, classificacao_counter, ind_pres_data):
-    st.header("Relatório Final")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Distribuição de CFOP")
-
-        cfop_df = pd.DataFrame.from_dict(
-            cfop_counter, orient='index', columns=['count']).reset_index()
-        cfop_df.columns = ['CFOP', 'Contagem']
-
-        if not cfop_df.empty:
-            cfop_df['CFOP'] = cfop_df['CFOP'].str[:4]
-            grouped_cfop = cfop_df.groupby('CFOP')[
-                'Contagem'].sum().reset_index()
-
-            cfop_chart = alt.Chart(grouped_cfop).mark_bar().encode(
-                x=alt.X('CFOP', title='CFOP'),
-                y=alt.Y('Contagem', title='Número de Notas'),
-                color='CFOP'
-            ).properties(
-                title='Distribuição de CFOP'
-            )
-            st.altair_chart(cfop_chart, use_container_width=True)
-        else:
-            st.write("Não há dados de CFOP para exibir.")
-
-        st.write("Dados de CFOP:")
-
-        def highlight_cfop(row):
-            cfop = row['CFOP']
-            highlight_cfops = ['6101', '6102', '6108', '6116']
-            if cfop in highlight_cfops:
-                ind_pres_values = ind_pres_data.get(cfop, [])
-                if all(value == "1" for value in ind_pres_values):
-                    # Verde para operações presenciais
-                    return ['background-color: #059212' for _ in row]
-                elif any(value != "1" for value in ind_pres_values):
-                    # Vermelho para operações não presenciais
-                    return ['background-color: #E4003A' for _ in row]
-            # Verde para outros CFOPs
-            return ['background-color: #059212' for _ in row]
-
-        styled_df = grouped_cfop.style.apply(highlight_cfop, axis=1)
-        st.dataframe(styled_df)
-
-    with col2:
-        st.subheader("Distribuição de Classificações")
-        class_df = pd.DataFrame.from_dict(
-            classificacao_counter, orient='index', columns=['count']).reset_index()
-        class_df.columns = ['Classificação', 'Contagem']
-
-        class_chart = alt.Chart(class_df).mark_arc().encode(
-            theta='Contagem',
-            color='Classificação',
-            tooltip=['Classificação', 'Contagem']
-        ).properties(
-            title='Distribuição de Classificações de Operação'
-        )
-        st.altair_chart(class_chart, use_container_width=True)
-
-        st.write("Dados de Classificações:")
-        st.dataframe(class_df)
-
-
 def process_files(uploaded_files):
     cfop_counter = Counter()
     classificacao_counter = Counter()
@@ -234,45 +166,10 @@ def process_files(uploaded_files):
     return cfop_counter, classificacao_counter, all_analyses, ind_pres_data
 
 
-def display_paginated_analyses(all_analyses, items_per_page=10):
-    total_pages = len(all_analyses) // items_per_page + \
-        (1 if len(all_analyses) % items_per_page > 0 else 0)
+def upload_and_analyze():
+    st.header("Upload e Análise de Notas Fiscais")
 
-    if 'page' not in st.session_state:
-        st.session_state.page = 1
-
-    def on_page_change():
-        st.session_state.page = st.session_state.page_selectbox
-        st.rerun()
-
-    page = st.selectbox("Página", options=range(1, total_pages + 1),
-                        index=st.session_state.page - 1,
-                        key="page_selectbox",
-                        on_change=on_page_change)
-
-    start_idx = (st.session_state.page - 1) * items_per_page
-    end_idx = min(start_idx + items_per_page, len(all_analyses))
-
-    for item in all_analyses[start_idx:end_idx]:
-        if item['color'] == 'green':
-            st.success(f"Nota Fiscal: {item['file_name']} ({item['status']})")
-        else:
-            st.error(f"Nota Fiscal: {item['file_name']} ({item['status']})")
-
-        with st.expander("Ver detalhes", expanded=False):
-            st.markdown(item['analysis'])
-            if item['color'] == 'green':
-                st.success(f"ESTA NOTA ESTÁ {item['status']}")
-            else:
-                st.error(f"ESTA NOTA {item['status']}")
-
-    st.write(
-        f"Exibindo notas {start_idx + 1} a {end_idx} de {len(all_analyses)}")
-
-
-def main():
-    st.title("FiscAI - Assistente de Validação de Notas Fiscais")
-
+    # Inicializar o session_state
     if 'analyzed' not in st.session_state:
         st.session_state.analyzed = False
     if 'all_analyses' not in st.session_state:
@@ -295,16 +192,14 @@ def main():
             st.session_state.cfop_counter, st.session_state.classificacao_counter, st.session_state.all_analyses, st.session_state.ind_pres_data = process_files(
                 uploaded_files)
             st.session_state.analyzed = True
+            st.success(
+                "Análise concluída! Você pode agora visualizar os resultados nas páginas 'Análise Individual' e 'Relatórios'.")
+
+    if not uploaded_files:
+        st.info(
+            "Por favor, carregue os arquivos XML para iniciar a análise automatizada.")
 
     if st.session_state.analyzed:
-        st.markdown("---")
-        display_paginated_analyses(st.session_state.all_analyses)
-
-        st.markdown("---")
-        display_report(st.session_state.cfop_counter,
-                       st.session_state.classificacao_counter,
-                       st.session_state.ind_pres_data)
-
         if st.button("Reiniciar Análise"):
             st.session_state.analyzed = False
             st.session_state.all_analyses = []
@@ -312,10 +207,7 @@ def main():
             st.session_state.classificacao_counter = Counter()
             st.session_state.ind_pres_data = {}
             st.rerun()
-    elif not uploaded_files:
-        st.info(
-            "Por favor, carregue os arquivos XML para iniciar a análise automatizada.")
 
 
-if __name__ == "__main__":
-    main()
+# Chamada da função principal da página
+upload_and_analyze()
