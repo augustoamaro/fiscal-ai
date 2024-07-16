@@ -74,6 +74,7 @@ def analyze_nf(json_data):
     serie = extract_value(json_data, "serie")
     cfop = extract_value(json_data, "CFOP")
     ind_pres = extract_value(json_data, "indPres")
+    valor_total = extract_value(json_data, "vNF")
 
     classificacao_operacao = {
         "0": "Não se aplica (ex: Nota Fiscal complementar ou de ajuste)",
@@ -97,7 +98,9 @@ def analyze_nf(json_data):
     
     **Número entre as tags <indPres> {ind_pres} </indPres>**\n
     
-    **CLASSIFICAÇÃO DA OPERAÇÃO:** {classificacao}
+    **CLASSIFICAÇÃO DA OPERAÇÃO:** {classificacao} \n
+
+    **VALOR DA NOTA FISCAL:** {valor_total}
     """
 
     # Implementação das novas regras
